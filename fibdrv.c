@@ -30,13 +30,82 @@ typedef struct BigN {
     unsigned long long lower, upper;
 } BigN;
 
+
+static int myclz(int input)
+{
+    // use binary search method to check
+    int count = 0;
+
+    if ((input & 0xFFFF0000) == 0) {
+        input <<= 16;
+        count += 16;
+    }  // 1111 1111 1111 1111
+    if ((input & 0xFF000000) == 0) {
+        input <<= 8;
+        count += 8;
+    }  // 1111 1111
+    if ((input & 0xF0000000) == 0) {
+        input <<= 4;
+        count += 4;
+    }  // 1111
+    if ((input & 0xC0000000) == 0) {
+        input <<= 2;
+        count += 2;
+    }  // 1100
+    if ((input & 0x80000000) == 0) {
+        count += 1;
+    }  // 1000
+    return count;
+}
+
 static inline void addBigN(struct BigN *output, struct BigN x, struct BigN y)
 {
     output->upper = x.upper + y.upper;
-    if (y.lower > ~x.lower)
+    unsigned long long diff = ULLONG_MAX - x.lower;
+    if (y.lower > diff)
         output->upper++;
     output->lower = x.lower + y.lower;
 }
+
+static inline void subBigN(struct BigN *output, struct BigN x, struct BigN y)
+{
+    if (x.lower < y.lower) {
+        output->lower = x.lower + ~y.lower + 1;
+        output->upper = x.upper - y.upper - 1;
+    } else {
+        output->lower = x.lower - y.lower;
+        output->upper = x.upper - y.upper;
+    }
+}
+
+static inline void mulBigN(struct BigN *output, struct BigN x, struct BigN y)
+{
+    output->lower = 0;
+    output->upper = 0;
+
+    size_t width = 8 * sizeof(unsigned long long);
+
+
+
+    for (size_t i = 0; i < width; i++) {
+        if ((y.lower >> i) & 0x1) {
+            BigN tmp;
+
+            output->upper += x.upper << i;
+
+            tmp.lower = (x.lower << i);
+            tmp.upper = (i == 0) ? 0 : (x.lower >> (width - i));
+            addBigN(output, *output, tmp);
+        }
+    }
+
+    for (size_t i = 0; i < width; i++) {
+        if ((y.upper >> i) & 0x1) {
+            output->upper += (x.lower << i);
+        }
+    }
+}
+
 
 static inline void setBigN(struct BigN *output,
                            unsigned long long upper,
@@ -48,18 +117,80 @@ static inline void setBigN(struct BigN *output,
 
 static BigN fib_sequence(long long k)
 {
+    long long start, end;
+    start = ktime_get_ns();
     /* FIXME: use clz/ctz and fast algorithms to speed up */
     BigN f[k + 2];
 
-    setBigN(&f[0], 0, 0);  // f[0] = 0
-    setBigN(&f[1], 0, 1);  // f[1] = 1
+    setBigN(&f[0], (long long) 0, (long long) 0);  // f[0] = 0
+    setBigN(&f[1], (long long) 0, (long long) 1);  // f[1] = 1
 
 
     for (int i = 2; i <= k; i++) {
         addBigN(&f[i], f[i - 1], f[i - 2]);  // f[i] = f[i - 1] + f[i - 2]
     }
 
+    end = ktime_get_ns();
+    printk("%lld %lld\n", k, end - start);
     return f[k];
+}
+
+static BigN fast_doubling_fib_sequence(long long k)
+{
+    long long start, end;
+    start = ktime_get_ns();
+
+    unsigned int msb = myclz(k);
+    unsigned int mask = (1 << (31 - msb - 1));
+    struct BigN a = {.upper = 0, .lower = 1}, b = {.upper = 0, .lower = 1};
+    struct BigN two = {.upper = 0, .lower = 2}, zero = {.upper = 0, .lower = 0};
+    struct BigN one = {.upper = 0, .lower = 1};
+    /* fast doubling formula
+     * f(2k) = f(k)[2f(k + 1) - f(k)]
+     * f(2k + 1) = f(k + 1)^2 + f(k)^2
+     */
+
+    if (k == 0) {
+        end = ktime_get_ns();
+        printk("%lld %lld\n", k, end - start);
+        return zero;
+    }
+    if (k == 1 || k == 2) {
+        end = ktime_get_ns();
+        printk("%lld %lld\n", k, end - start);
+        return one;
+    }
+
+    while (mask > 0) {
+        BigN t1, t2, tmp, tmp2;
+        /*
+        t1 = a*(2*b - a);
+        t2 = b^2 + a^2;
+        a = t1; b = t2; // m *= 2
+        if (current binary digit == 1)
+            t1 = a + b; // m++
+            a = b; b = t1;
+        */
+
+        mulBigN(&tmp, two, b);
+        subBigN(&tmp2, tmp, a);
+        mulBigN(&t1, a, tmp2);
+
+        mulBigN(&tmp, b, b);
+        mulBigN(&tmp2, a, a);
+        addBigN(&t2, tmp, tmp2);
+        a = t1;
+        b = t2;
+        if (mask & k) {
+            addBigN(&t1, a, b);
+            a = b;
+            b = t1;
+        }
+        mask >>= 1;
+    }
+    end = ktime_get_ns();
+    printk("%lld %lld\n", k, end - start);
+    return a;
 }
 
 static int fib_open(struct inode *inode, struct file *file)
@@ -84,10 +215,13 @@ static ssize_t fib_read(struct file *file,
                         loff_t *offset)
 {
     char kbuf[128] = {0};
+#ifdef VER_DP
     BigN tmp = fib_sequence(*offset);
-
+#else
+    BigN tmp = fast_doubling_fib_sequence(*offset);
+#endif
     if (tmp.upper != 0)
-        sprintf(kbuf, "%llu%llu", tmp.upper, tmp.lower);
+        sprintf(kbuf, "%llu_%llu", tmp.upper, tmp.lower);
     else
         sprintf(kbuf, "%llu", tmp.lower);
     copy_to_user(buf, kbuf, 128);

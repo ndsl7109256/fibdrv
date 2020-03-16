@@ -31,8 +31,8 @@ int main()
         sz = read(fd, buf, 1);
         printf("Reading from " FIB_DEV
                " at offset %d, returned the sequence "
-               "%lld.\n",
-               i, sz);
+               "%s.\n",
+               i, buf);
     }
 
     for (int i = offset; i >= 0; i--) {
