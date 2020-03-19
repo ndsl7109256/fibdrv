@@ -20,6 +20,7 @@ MODULE_VERSION("0.1");
  * ssize_t can't fit the number > 92
  */
 #define MAX_LENGTH 101
+#define DECIMAL_MAX 100000000000000000
 
 static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
@@ -58,14 +59,31 @@ static int myclz(int input)
     return count;
 }
 
+static inline void addBigN_DECIMAL(struct BigN *output, struct BigN x, struct BigN y)
+{
+    output->upper = x.upper + y.upper;
+
+    unsigned long long diff =  DECIMAL_MAX - x.lower;
+	if(y.lower > diff){
+		output->upper++;
+		output->lower = x.lower+y.lower-DECIMAL_MAX;
+	}else
+		output->lower = x.lower + y.lower;
+	
+}
+
 static inline void addBigN(struct BigN *output, struct BigN x, struct BigN y)
 {
     output->upper = x.upper + y.upper;
     unsigned long long diff = ULLONG_MAX - x.lower;
-    if (y.lower > diff)
+	if (y.lower > diff){
         output->upper++;
+	}
     output->lower = x.lower + y.lower;
+
 }
+
+
 
 static inline void subBigN(struct BigN *output, struct BigN x, struct BigN y)
 {
@@ -127,7 +145,7 @@ static BigN fib_sequence(long long k)
 
 
     for (int i = 2; i <= k; i++) {
-        addBigN(&f[i], f[i - 1], f[i - 2]);  // f[i] = f[i - 1] + f[i - 2]
+        addBigN_DECIMAL(&f[i], f[i - 1], f[i - 2]);  // f[i] = f[i - 1] + f[i - 2]
     }
 
     end = ktime_get_ns();
@@ -193,6 +211,60 @@ static BigN fast_doubling_fib_sequence(long long k)
     return a;
 }
 
+static unsigned long long normal_fib(long k){
+	long long start, end;
+    start = ktime_get_ns();
+	long long f[k + 2];
+
+    f[0] = 0;
+    f[1] = 1;
+
+    for (int i = 2; i <= k; i++) {
+        f[i] = f[i - 1] + f[i - 2];
+    }
+	end = ktime_get_ns();
+    printk("%lld %lld\n", k, end - start);
+
+    return f[k];
+}
+
+static unsigned long long fast_fib(long k){
+	long long start, end;
+    start = ktime_get_ns();
+
+	unsigned int msb = myclz(k);
+	unsigned long long a = 0,b = 1;
+
+	if(k==0){
+		end = ktime_get_ns();
+		printk("%lld %lld\n", k, end - start);
+		return 0;
+	}
+	else if( k==1 || k ==2 ){
+		end = ktime_get_ns();
+		printk("%lld %lld\n", k, end - start);
+		return 1;
+	}
+	for (int i = 31 - msb; i >= 0; i--) {
+        unsigned long long t1, t2;
+		t1 = a*(2*b - a);
+        t2 = b*b + a*a;
+        a = t1; 
+		b = t2; // m *= 2
+        if ((k & (1 << i)) > 0) {
+			t1 = a + b;
+			a = b;
+			b = t1;
+        }
+    }
+	end = ktime_get_ns();
+    printk("%lld %lld\n", k, end - start);
+
+	return a;
+	
+	
+}
+
 static int fib_open(struct inode *inode, struct file *file)
 {
     if (!mutex_trylock(&fib_mutex)) {
@@ -220,11 +292,12 @@ static ssize_t fib_read(struct file *file,
 #else
     BigN tmp = fast_doubling_fib_sequence(*offset);
 #endif
+	
     if (tmp.upper != 0)
         sprintf(kbuf, "%llu_%llu", tmp.upper, tmp.lower);
     else
         sprintf(kbuf, "%llu", tmp.lower);
-    copy_to_user(buf, kbuf, 128);
+	copy_to_user(buf, kbuf, 128);
     return 1;
 }
 
