@@ -135,8 +135,6 @@ static inline void setBigN(struct BigN *output,
 
 static BigN fib_sequence(long long k)
 {
-    long long start, end;
-    start = ktime_get_ns();
     /* FIXME: use clz/ctz and fast algorithms to speed up */
     BigN f[k + 2];
 
@@ -148,15 +146,11 @@ static BigN fib_sequence(long long k)
         addBigN_DECIMAL(&f[i], f[i - 1], f[i - 2]);  // f[i] = f[i - 1] + f[i - 2]
     }
 
-    end = ktime_get_ns();
-    printk("%lld %lld\n", k, end - start);
     return f[k];
 }
 
 static BigN fast_doubling_fib_sequence(long long k)
 {
-    long long start, end;
-    start = ktime_get_ns();
 
     unsigned int msb = myclz(k);
     unsigned int mask = (1 << (31 - msb - 1));
@@ -169,13 +163,9 @@ static BigN fast_doubling_fib_sequence(long long k)
      */
 
     if (k == 0) {
-        end = ktime_get_ns();
-        printk("%lld %lld\n", k, end - start);
         return zero;
     }
     if (k == 1 || k == 2) {
-        end = ktime_get_ns();
-        printk("%lld %lld\n", k, end - start);
         return one;
     }
 
@@ -206,14 +196,10 @@ static BigN fast_doubling_fib_sequence(long long k)
         }
         mask >>= 1;
     }
-    end = ktime_get_ns();
-    printk("%lld %lld\n", k, end - start);
     return a;
 }
 
 static unsigned long long normal_fib(long k){
-	long long start, end;
-    start = ktime_get_ns();
 	long long f[k + 2];
 
     f[0] = 0;
@@ -222,27 +208,19 @@ static unsigned long long normal_fib(long k){
     for (int i = 2; i <= k; i++) {
         f[i] = f[i - 1] + f[i - 2];
     }
-	end = ktime_get_ns();
-    printk("%lld %lld\n", k, end - start);
 
     return f[k];
 }
 
 static unsigned long long fast_fib_with_ctz(long k){
-	long long start, end;
-    start = ktime_get_ns();
 
 	unsigned int msb = myclz(k);
 	unsigned long long a = 0,b = 1;
 
 	if(k==0){
-		end = ktime_get_ns();
-		printk("%lld %lld\n", k, end - start);
 		return 0;
 	}
 	else if( k==1 || k ==2 ){
-		end = ktime_get_ns();
-		printk("%lld %lld\n", k, end - start);
 		return 1;
 	}
 	for (int i = 31 - msb; i >= 0; i--) {
@@ -257,8 +235,6 @@ static unsigned long long fast_fib_with_ctz(long k){
 			b = t1;
         }
     }
-	end = ktime_get_ns();
-    printk("%lld %lld\n", k, end - start);
 
 	return a;
 }
@@ -301,17 +277,19 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
+    long long start,end;
+
+	start = ktime_get_ns();
     char kbuf[128] = {0};
+    long tmp;
 #ifdef VER_DP
-    BigN tmp = fib_sequence(*offset);
+    tmp = normal_fib(*offset);
 #else
-    BigN tmp = fast_doubling_fib_sequence(*offset);
+    tmp = fast_fib(*offset);
 #endif
-	
-    if (tmp.upper != 0)
-        sprintf(kbuf, "%llu_%llu", tmp.upper, tmp.lower);
-    else
-        sprintf(kbuf, "%llu", tmp.lower);
+	end = ktime_get_ns();
+	printk("%lld %lld\n", *offset, end - start);
+    sprintf(kbuf, "%llu", tmp);
 	copy_to_user(buf, kbuf, 128);
     return 1;
 }

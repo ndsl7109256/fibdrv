@@ -16,8 +16,8 @@ dp: all
 	$(MAKE) unload
 	$(MAKE) load
 	sudo dmesg -c
-	sudo ./client > out
-	dmesg | cut -d ' ' -f 2- > perf_dp.out
+	sudo taskset 0x1 ./client > out
+	dmesg | cut -d ' ' -f 2- > dp.out
 	$(MAKE) unload
 
 
@@ -26,8 +26,8 @@ dbl: all
 	$(MAKE) unload
 	$(MAKE) load
 	sudo dmesg -c
-	sudo ./client > out
-	dmesg | cut -d ' ' -f 2- > perf_dbl.out
+	sudo taskset 0x1 ./client > out
+	dmesg | cut -d ' ' -f 2- > dbl.out
 	$(MAKE) unload
 
 $(GIT_HOOKS):
@@ -48,7 +48,6 @@ client: client.c
 AAA:
 	sudo rmmod $(TARGET_MODULE) || true >/dev/null
 	sudo insmod $(TARGET_MODULE).ko
-
 
 PRINTF = env printf
 PASS_COLOR = \e[32;01m
