@@ -9,8 +9,26 @@ PWD := $(shell pwd)
 
 GIT_HOOKS := .git/hooks/applied
 
-all: $(GIT_HOOKS) client
+all: $(GIT_HOOKS) client 
+
+dp: all
+	$(MAKE) -C $(KDIR) M=$(PWD) modules EXTRA_CFLAGS=-DVER_DP
+	$(MAKE) unload
+	$(MAKE) load
+	sudo dmesg -c
+	sudo ./client > out
+	dmesg | cut -d ' ' -f 2- > perf_dp.out
+	$(MAKE) unload
+
+
+dbl: all
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) unload
+	$(MAKE) load
+	sudo dmesg -c
+	sudo ./client > out
+	dmesg | cut -d ' ' -f 2- > perf_dbl.out
+	$(MAKE) unload
 
 $(GIT_HOOKS):
 	@scripts/install-git-hooks
@@ -26,6 +44,11 @@ unload:
 
 client: client.c
 	$(CC) -o $@ $^
+
+AAA:
+	sudo rmmod $(TARGET_MODULE) || true >/dev/null
+	sudo insmod $(TARGET_MODULE).ko
+
 
 PRINTF = env printf
 PASS_COLOR = \e[32;01m

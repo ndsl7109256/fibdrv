@@ -228,7 +228,7 @@ static unsigned long long normal_fib(long k){
     return f[k];
 }
 
-static unsigned long long fast_fib(long k){
+static unsigned long long fast_fib_with_ctz(long k){
 	long long start, end;
     start = ktime_get_ns();
 
@@ -261,8 +261,23 @@ static unsigned long long fast_fib(long k){
     printk("%lld %lld\n", k, end - start);
 
 	return a;
-	
-	
+}
+
+unsigned long long fast_fib(int n)
+{
+    unsigned long long a = 0, b = 1, t1, t2;
+    for (int i = 31; i >= 0; i--) {
+        t1 = a * (b * 2 - a);
+        t2 = b * b + a * a;
+        a = t1;
+        b = t2;
+        if ((n & (1 << i)) > 0) {
+            t1 = a + b;
+            a = b;
+            b = t1;
+        }
+    }
+    return a;
 }
 
 static int fib_open(struct inode *inode, struct file *file)
